@@ -1,481 +1,456 @@
 import streamlit as st
-import pandas as pd
-from datetime import datetime, timedelta
 import gspread
+import pandas as pd
 from google.oauth2.service_account import Credentials
+import datetime
+import random
 import time
-import json
+from typing import Dict, List, Any
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Rifa Multi-Vendedor",
-    page_icon="🎲",
-    layout="wide"
+    page_title="Rifa Multivendedor",
+    page_icon="🎟️",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Configuración de Google Sheets
+# Configuración de autenticación con Google Sheets
 @st.cache_resource
-def init_google_sheets():
-    """Inicializa la conexión con Google Sheets usando st.secrets"""
+def init_connection():
+    """Inicializa la conexión con Google Sheets usando las credenciales del secrets"""
     try:
-        # Las credenciales se configuran en Streamlit.app secrets
-        credentials_dict = st.secrets["gcp_service_account"]
+        # Configurar credenciales desde st.secrets
         credentials = Credentials.from_service_account_info(
-            credentials_dict,
+            st.secrets["gcp_service_account"],
             scopes=[
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive"
             ]
         )
         
-        client = gspread.authorize(credentials)
-        
-        # ID de tu Google Sheet (configurable en secrets)
-        sheet_id = st.secrets["google_sheet_id"]
-        sheet = client.open_by_key(sheet_id)
-        
-        return sheet
+        # Conectar con Google Sheets
+        gc = gspread.authorize(credentials)
+        sheet_id = st.secrets["GOOGLE_SHEET_ID"]
+        return gc, sheet_id
     except Exception as e:
-        st.error(f"Error conectando con Google Sheets: {e}")
-        st.info("Configurar las credenciales en Streamlit secrets:")
-        st.code("""
-[gcp_service_account]
-type = "service_account"
-project_id = "tu-proyecto"
-private_key_id = "key-id"
-private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
-client_email = "email@proyecto.iam.gserviceaccount.com"
-client_id = "client-id"
-auth_uri = "https://accounts.google.com/o/oauth2/auth"
-token_uri = "https://oauth2.googleapis.com/token"
+        st.error(f"Error de conexión: {e}")
+        return None, None
 
-google_sheet_id = "1ABC123XYZ456..."
-        """)
-        return None
+def get_sheet_data(gc, sheet_id, worksheet_name="ventas"):
+    """Obtiene datos de la hoja de cálculo"""
+    try:
+        sheet = gc.open_by_key(sheet_id)
+        worksheet = sheet.worksheet(worksheet_name)
+        data = worksheet.get_all_records()
+        return pd.DataFrame(data)
+    except Exception as e:
+        st.error(f"Error al obtener datos: {e}")
+        return pd.DataFrame()
 
-class RifaManager:
-    def __init__(self, sheet):
-        self.sheet = sheet
-        self.ventas_worksheet = None
-        self.reservas_worksheet = None
-        self.init_worksheets()
-    
-    def init_worksheets(self):
-        """Inicializa las hojas de trabajo"""
-        try:
-            # Hoja de ventas confirmadas
-            try:
-                self.ventas_worksheet = self.sheet.worksheet("ventas")
-            except gspread.WorksheetNotFound:
-                self.ventas_worksheet = self.sheet.add_worksheet(
-                    title="ventas", rows=200, cols=10
-                )
-                self.ventas_worksheet.append_row([
-                    "numero", "comprador", "telefono", "vendedor", 
-                    "fecha_venta", "timestamp"
-                ])
-            
-            # Hoja de reservas temporales (evitar sobreventa)
-            try:
-                self.reservas_worksheet = self.sheet.worksheet("reservas")
-            except gspread.WorksheetNotFound:
-                self.reservas_worksheet = self.sheet.add_worksheet(
-                    title="reservas", rows=200, cols=10
-                )
-                self.reservas_worksheet.append_row([
-                    "numero", "vendedor", "timestamp_reserva", "expira_en"
-                ])
-                
-        except Exception as e:
-            st.error(f"Error inicializando worksheets: {e}")
-    
-    def limpiar_reservas_expiradas(self):
-        """Limpia reservas que han expirado"""
-        try:
-            records = self.reservas_worksheet.get_all_records()
-            now = datetime.now()
-            
-            rows_to_delete = []
-            for i, record in enumerate(records):
-                expira = datetime.fromisoformat(record['expira_en'])
-                if now > expira:
-                    rows_to_delete.append(i + 2)  # +2 porque índice empieza en 1 y hay header
-            
-            # Eliminar filas expiradas (de atrás hacia adelante)
-            for row_num in reversed(rows_to_delete):
-                self.reservas_worksheet.delete_rows(row_num)
-                
-        except Exception as e:
-            st.warning(f"Error limpiando reservas: {e}")
-    
-    def obtener_numeros_vendidos(self):
-        """Obtiene números ya vendidos definitivamente"""
-        try:
-            records = self.ventas_worksheet.get_all_records()
-            return {int(record['numero']): record for record in records if record['numero']}
-        except:
-            return {}
-    
-    def obtener_numeros_reservados(self):
-        """Obtiene números temporalmente reservados"""
-        try:
-            self.limpiar_reservas_expiradas()
-            records = self.reservas_worksheet.get_all_records()
-            return {int(record['numero']): record for record in records if record['numero']}
-        except:
-            return {}
-    
-    def reservar_numero(self, numero, vendedor, minutos=5):
-        """Reserva un número temporalmente"""
-        try:
-            # Verificar si ya está vendido o reservado
-            vendidos = self.obtener_numeros_vendidos()
-            reservados = self.obtener_numeros_reservados()
-            
-            if numero in vendidos:
-                return False, "Número ya vendido"
-            
-            if numero in reservados:
-                return False, f"Número reservado por {reservados[numero]['vendedor']}"
-            
-            # Crear reserva
-            now = datetime.now()
-            expira = now + timedelta(minutes=minutos)
-            
-            self.reservas_worksheet.append_row([
-                numero, vendedor, now.isoformat(), expira.isoformat()
-            ])
-            
-            return True, "Número reservado exitosamente"
-            
-        except Exception as e:
-            return False, f"Error reservando: {e}"
-    
-    def confirmar_venta(self, numero, comprador, telefono, vendedor):
-        """Confirma una venta y elimina la reserva"""
-        try:
-            # Verificar que el vendedor tiene la reserva
-            reservados = self.obtener_numeros_reservados()
-            if numero not in reservados:
-                return False, "Número no está reservado"
-            
-            if reservados[numero]['vendedor'] != vendedor:
-                return False, "No tienes la reserva de este número"
-            
-            # Agregar a ventas
-            now = datetime.now()
-            self.ventas_worksheet.append_row([
-                numero, comprador, telefono, vendedor, 
-                now.strftime("%Y-%m-%d %H:%M:%S"), now.isoformat()
-            ])
-            
-            # Eliminar reserva
-            self.cancelar_reserva(numero, vendedor)
-            
-            return True, "Venta confirmada exitosamente"
-            
-        except Exception as e:
-            return False, f"Error confirmando venta: {e}"
-    
-    def cancelar_reserva(self, numero, vendedor):
-        """Cancela una reserva específica"""
-        try:
-            records = self.reservas_worksheet.get_all_records()
-            for i, record in enumerate(records):
-                if (int(record['numero']) == numero and 
-                    record['vendedor'] == vendedor):
-                    self.reservas_worksheet.delete_rows(i + 2)
-                    break
-        except Exception as e:
-            st.warning(f"Error cancelando reserva: {e}")
-
-# Inicializar componentes
-@st.cache_resource
-def get_rifa_manager():
-    sheet = init_google_sheets()
-    if sheet:
-        return RifaManager(sheet)
-    return None
-
-# Inicializar session state
-if 'vendedor' not in st.session_state:
-    st.session_state.vendedor = ""
-if 'ultima_actualizacion' not in st.session_state:
-    st.session_state.ultima_actualizacion = datetime.now()
-if 'numero_reservado' not in st.session_state:
-    st.session_state.numero_reservado = None
-if 'tiempo_reserva' not in st.session_state:
-    st.session_state.tiempo_reserva = None
-
-# Obtener manager
-rifa_manager = get_rifa_manager()
-
-if not rifa_manager:
-    st.error("❌ No se pudo conectar con Google Sheets. Configura las credenciales.")
-    st.stop()
-
-# Título principal
-st.title("🎲 Rifa Multi-Vendedor")
-st.caption("Sistema sincronizado en tiempo real para múltiples vendedores")
-
-# Sidebar - Información del vendedor
-st.sidebar.header("👤 Tu Información")
-vendedor = st.sidebar.text_input(
-    "Tu Nombre:", 
-    value=st.session_state.vendedor,
-    help="Identifica tus ventas"
-)
-if vendedor:
-    st.session_state.vendedor = vendedor
-
-# Auto-refresh cada 30 segundos
-auto_refresh = st.sidebar.checkbox("🔄 Auto-actualizar (30s)", value=True)
-if auto_refresh:
-    time.sleep(1)  # Pequeña pausa para evitar spam
-    if (datetime.now() - st.session_state.ultima_actualizacion).seconds > 30:
-        st.session_state.ultima_actualizacion = datetime.now()
-        st.rerun()
-
-# Obtener datos actuales
-numeros_vendidos = rifa_manager.obtener_numeros_vendidos()
-numeros_reservados = rifa_manager.obtener_numeros_reservados()
-
-# Estadísticas
-st.sidebar.header("📊 Estadísticas en Vivo")
-vendidos_count = len(numeros_vendidos)
-reservados_count = len(numeros_reservados)
-disponibles_count = 100 - vendidos_count - reservados_count
-
-st.sidebar.metric("✅ Vendidos", vendidos_count)
-st.sidebar.metric("⏳ Reservados", reservados_count)
-st.sidebar.metric("🟢 Disponibles", disponibles_count)
-
-if vendidos_count > 0:
-    porcentaje = (vendidos_count / 100) * 100
-    st.sidebar.metric("📈 Progreso", f"{porcentaje:.1f}%")
-
-# Información de reserva actual
-if st.session_state.numero_reservado:
-    reserva_info = numeros_reservados.get(st.session_state.numero_reservado)
-    if reserva_info and reserva_info['vendedor'] == vendedor:
-        expira = datetime.fromisoformat(reserva_info['expira_en'])
-        tiempo_restante = expira - datetime.now()
-        if tiempo_restante.total_seconds() > 0:
-            minutos = int(tiempo_restante.total_seconds() // 60)
-            segundos = int(tiempo_restante.total_seconds() % 60)
-            st.sidebar.warning(f"⏰ Tienes reservado el #{st.session_state.numero_reservado}\nExpira en: {minutos}m {segundos}s")
-        else:
-            st.session_state.numero_reservado = None
-
-def mostrar_grilla_numeros():
-    st.header("🔢 Estado de los Números")
-    
-    # Botón de actualización manual
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        if st.button("🔄 Actualizar", type="secondary"):
-            st.rerun()
-    
-    # Crear la grilla 10x10
-    cols = st.columns(10)
-    
-    for i in range(100):
-        numero = i + 1
-        col_index = i % 10
+def add_sale_to_sheet(gc, sheet_id, sale_data, worksheet_name="ventas"):
+    """Agrega una nueva venta a la hoja de cálculo"""
+    try:
+        sheet = gc.open_by_key(sheet_id)
         
-        with cols[col_index]:
-            if numero in numeros_vendidos:
-                # Número vendido - rojo
-                info = numeros_vendidos[numero]
-                st.markdown(
-                    f"""<div style='
-                        background-color: #ff4444; 
-                        color: white; 
-                        text-align: center; 
-                        padding: 8px; 
-                        margin: 2px; 
-                        border-radius: 5px;
-                        font-weight: bold;
-                        font-size: 12px;
-                    ' title='VENDIDO - {info["comprador"]} ({info["vendedor"]})'>{numero}</div>""", 
-                    unsafe_allow_html=True
-                )
-            elif numero in numeros_reservados:
-                # Número reservado - amarillo
-                info = numeros_reservados[numero]
-                color = "#ffaa00" if info['vendedor'] != vendedor else "#ff8800"
-                st.markdown(
-                    f"""<div style='
-                        background-color: {color}; 
-                        color: white; 
-                        text-align: center; 
-                        padding: 8px; 
-                        margin: 2px; 
-                        border-radius: 5px;
-                        font-weight: bold;
-                        font-size: 12px;
-                    ' title='RESERVADO por {info["vendedor"]}'>{numero}</div>""", 
-                    unsafe_allow_html=True
-                )
-            else:
-                # Número disponible - verde
-                st.markdown(
-                    f"""<div style='
-                        background-color: #44ff44; 
-                        color: black; 
-                        text-align: center; 
-                        padding: 8px; 
-                        margin: 2px; 
-                        border-radius: 5px;
-                        font-weight: bold;
-                        font-size: 12px;
-                    '>{numero}</div>""", 
-                    unsafe_allow_html=True
-                )
+        # Intentar acceder a la hoja, si no existe la creamos
+        try:
+            worksheet = sheet.worksheet(worksheet_name)
+        except gspread.WorksheetNotFound:
+            # Crear hoja con headers
+            worksheet = sheet.add_worksheet(title=worksheet_name, rows="1000", cols="10")
+            headers = ["fecha", "vendedor", "numero", "nombre_comprador", "telefono", "email", "monto", "estado", "observaciones"]
+            worksheet.append_row(headers)
+        
+        # Agregar nueva fila
+        row_data = [
+            sale_data["fecha"],
+            sale_data["vendedor"],
+            sale_data["numero"],
+            sale_data["nombre_comprador"],
+            sale_data["telefono"],
+            sale_data["email"],
+            sale_data["monto"],
+            sale_data["estado"],
+            sale_data.get("observaciones", "")
+        ]
+        worksheet.append_row(row_data)
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar venta: {e}")
+        return False
 
-def proceso_venta():
-    st.header("💰 Proceso de Venta")
+def get_available_numbers(df, total_numbers=100):
+    """Obtiene los números disponibles para la rifa"""
+    if df.empty:
+        return list(range(1, total_numbers + 1))
     
-    if not vendedor:
-        st.warning("⚠️ Ingresa tu nombre en la barra lateral primero.")
+    sold_numbers = df[df['estado'] == 'vendido']['numero'].astype(int).tolist()
+    available = [num for num in range(1, total_numbers + 1) if num not in sold_numbers]
+    return available
+
+def get_sales_summary(df):
+    """Genera resumen de ventas"""
+    if df.empty:
+        return {
+            'total_vendidos': 0,
+            'total_disponibles': 100,
+            'monto_total': 0,
+            'ventas_por_vendedor': {}
+        }
+    
+    sold_df = df[df['estado'] == 'vendido']
+    
+    summary = {
+        'total_vendidos': len(sold_df),
+        'total_disponibles': 100 - len(sold_df),
+        'monto_total': sold_df['monto'].astype(float).sum() if not sold_df.empty else 0,
+        'ventas_por_vendedor': sold_df.groupby('vendedor').size().to_dict() if not sold_df.empty else {}
+    }
+    
+    return summary
+
+# CSS personalizado
+def load_css():
+    st.markdown("""
+    <style>
+    .main-header {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+        text-align: center;
+        color: white;
+    }
+    
+    .number-grid {
+        display: grid;
+        grid-template-columns: repeat(10, 1fr);
+        gap: 5px;
+        margin: 1rem 0;
+    }
+    
+    .number-cell {
+        background-color: #f0f2f6;
+        padding: 10px;
+        text-align: center;
+        border-radius: 5px;
+        border: 1px solid #ddd;
+    }
+    
+    .number-sold {
+        background-color: #ff6b6b;
+        color: white;
+    }
+    
+    .number-available {
+        background-color: #51cf66;
+        color: white;
+        cursor: pointer;
+    }
+    
+    .stats-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    
+    .vendor-section {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+def display_number_grid(available_numbers, sold_numbers, total_numbers=100):
+    """Muestra la grilla de números de la rifa"""
+    st.markdown("### 🎯 Estado de los Números")
+    
+    # Crear la grilla usando columnas de Streamlit
+    cols_per_row = 10
+    rows = [list(range(i, min(i + cols_per_row, total_numbers + 1))) for i in range(1, total_numbers + 1, cols_per_row)]
+    
+    for row in rows:
+        cols = st.columns(len(row))
+        for i, num in enumerate(row):
+            with cols[i]:
+                if num in sold_numbers:
+                    st.markdown(f'<div style="background-color: #ff6b6b; color: white; padding: 10px; text-align: center; border-radius: 5px; margin: 2px;">{num}</div>', unsafe_allow_html=True)
+                elif num in available_numbers:
+                    st.markdown(f'<div style="background-color: #51cf66; color: white; padding: 10px; text-align: center; border-radius: 5px; margin: 2px;">{num}</div>', unsafe_allow_html=True)
+
+def main():
+    # Cargar CSS
+    load_css()
+    
+    # Header principal
+    st.markdown("""
+    <div class="main-header">
+        <h1>🎟️ Rifa Multivendedor</h1>
+        <p>Sistema de gestión de rifas con múltiples vendedores</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Inicializar conexión
+    gc, sheet_id = init_connection()
+    
+    if gc is None or sheet_id is None:
+        st.error("No se pudo establecer conexión con Google Sheets. Verifica la configuración.")
         return
     
-    # Paso 1: Reservar número
-    if not st.session_state.numero_reservado:
-        st.subheader("Paso 1: Reservar Número")
+    # Sidebar para navegación
+    st.sidebar.title("🎯 Navegación")
+    page = st.sidebar.selectbox(
+        "Selecciona una opción:",
+        ["🏠 Inicio", "🛒 Comprar Número", "👥 Panel Vendedor", "📊 Administración"]
+    )
+    
+    # Obtener datos actuales
+    df = get_sheet_data(gc, sheet_id)
+    available_numbers = get_available_numbers(df)
+    sold_numbers = df[df['estado'] == 'vendido']['numero'].astype(int).tolist() if not df.empty else []
+    summary = get_sales_summary(df)
+    
+    if page == "🏠 Inicio":
+        # Página de inicio
+        col1, col2, col3, col4 = st.columns(4)
         
-        numeros_disponibles = []
-        for i in range(1, 101):
-            if i not in numeros_vendidos and i not in numeros_reservados:
-                numeros_disponibles.append(i)
+        with col1:
+            st.metric("📊 Números Vendidos", summary['total_vendidos'])
         
-        if not numeros_disponibles:
-            st.error("🚫 No hay números disponibles")
+        with col2:
+            st.metric("✅ Números Disponibles", summary['total_disponibles'])
+        
+        with col3:
+            st.metric("💰 Recaudación Total", f"${summary['monto_total']:,.0f}")
+        
+        with col4:
+            progress = summary['total_vendidos'] / 100 * 100
+            st.metric("📈 Progreso", f"{progress:.1f}%")
+        
+        # Mostrar grilla de números
+        display_number_grid(available_numbers, sold_numbers)
+        
+        # Información adicional
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 📋 Información de la Rifa")
+            st.write("- **Total de números:** 100")
+            st.write("- **Precio por número:** $10,000")
+            st.write("- **Premio:** Por definir")
+            st.write("- **Fecha de sorteo:** Por definir")
+        
+        with col2:
+            st.markdown("### 🏆 Top Vendedores")
+            if summary['ventas_por_vendedor']:
+                for vendedor, ventas in sorted(summary['ventas_por_vendedor'].items(), key=lambda x: x[1], reverse=True):
+                    st.write(f"**{vendedor}:** {ventas} números")
+            else:
+                st.write("No hay ventas registradas aún")
+    
+    elif page == "🛒 Comprar Número":
+        st.markdown("### 🛒 Comprar Número de Rifa")
+        
+        if not available_numbers:
+            st.error("¡Lo sentimos! Todos los números han sido vendidos.")
             return
         
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            numero_elegido = st.selectbox(
-                "Elige el número a reservar:",
-                numeros_disponibles
-            )
-        with col2:
-            if st.button("🔒 Reservar", type="primary"):
-                success, message = rifa_manager.reservar_numero(numero_elegido, vendedor)
-                if success:
-                    st.session_state.numero_reservado = numero_elegido
-                    st.success(f"✅ {message}")
-                    st.rerun()
-                else:
-                    st.error(f"❌ {message}")
-                    st.rerun()
-    
-    # Paso 2: Confirmar venta
-    else:
-        st.subheader(f"Paso 2: Confirmar Venta del Número {st.session_state.numero_reservado}")
-        
-        with st.form("confirmar_venta"):
+        with st.form("compra_form"):
             col1, col2 = st.columns(2)
             
             with col1:
-                nombre_comprador = st.text_input("Nombre del comprador:")
+                st.markdown("**Información del Comprador**")
+                nombre = st.text_input("Nombre completo *")
+                telefono = st.text_input("Teléfono *")
+                email = st.text_input("Email")
                 
             with col2:
-                telefono = st.text_input("Teléfono:")
+                st.markdown("**Detalles de la Compra**")
+                vendedor = st.selectbox("Vendedor *", ["Vendedor 1", "Vendedor 2", "Vendedor 3", "Otro"])
+                if vendedor == "Otro":
+                    vendedor = st.text_input("Nombre del vendedor")
+                
+                numero_seleccionado = st.selectbox("Número a comprar *", available_numbers)
+                monto = st.number_input("Monto ($)", value=10000, min_value=1000)
+                observaciones = st.text_area("Observaciones", placeholder="Información adicional...")
             
-            col1, col2 = st.columns(2)
-            with col1:
-                confirmar = st.form_submit_button("✅ Confirmar Venta", type="primary")
-            with col2:
-                cancelar = st.form_submit_button("❌ Cancelar Reserva", type="secondary")
+            submitted = st.form_submit_button("💳 Confirmar Compra", use_container_width=True)
             
-            if confirmar:
-                if nombre_comprador and telefono:
-                    success, message = rifa_manager.confirmar_venta(
-                        st.session_state.numero_reservado, 
-                        nombre_comprador, 
-                        telefono, 
-                        vendedor
-                    )
+            if submitted:
+                if not nombre or not telefono or not vendedor:
+                    st.error("Por favor completa todos los campos obligatorios (*)")
+                else:
+                    # Preparar datos de venta
+                    sale_data = {
+                        "fecha": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "vendedor": vendedor,
+                        "numero": numero_seleccionado,
+                        "nombre_comprador": nombre,
+                        "telefono": telefono,
+                        "email": email,
+                        "monto": monto,
+                        "estado": "vendido",
+                        "observaciones": observaciones
+                    }
+                    
+                    # Guardar en Google Sheets
+                    with st.spinner("Procesando compra..."):
+                        success = add_sale_to_sheet(gc, sheet_id, sale_data)
+                    
                     if success:
-                        st.success(f"🎉 {message}")
-                        st.session_state.numero_reservado = None
+                        st.success(f"¡Compra exitosa! Número {numero_seleccionado} vendido a {nombre}")
+                        st.balloons()
+                        time.sleep(2)
                         st.rerun()
                     else:
-                        st.error(f"❌ {message}")
-                else:
-                    st.error("❌ Completa todos los campos")
+                        st.error("Error al procesar la compra. Intenta nuevamente.")
+    
+    elif page == "👥 Panel Vendedor":
+        st.markdown("### 👥 Panel del Vendedor")
+        
+        vendedor_filter = st.selectbox("Seleccionar Vendedor", 
+                                     ["Todos"] + list(summary['ventas_por_vendedor'].keys()) + ["Vendedor 1", "Vendedor 2", "Vendedor 3"])
+        
+        if vendedor_filter != "Todos" and not df.empty:
+            df_filtered = df[df['vendedor'] == vendedor_filter]
+        else:
+            df_filtered = df
+        
+        # Estadísticas del vendedor
+        if vendedor_filter != "Todos":
+            col1, col2, col3 = st.columns(3)
+            vendedor_sales = df_filtered[df_filtered['estado'] == 'vendido'] if not df_filtered.empty else pd.DataFrame()
             
-            if cancelar:
-                rifa_manager.cancelar_reserva(st.session_state.numero_reservado, vendedor)
-                st.session_state.numero_reservado = None
-                st.info("Reserva cancelada")
-                st.rerun()
+            with col1:
+                st.metric("Números Vendidos", len(vendedor_sales))
+            with col2:
+                total_vendedor = vendedor_sales['monto'].astype(float).sum() if not vendedor_sales.empty else 0
+                st.metric("Total Recaudado", f"${total_vendedor:,.0f}")
+            with col3:
+                comision = total_vendedor * 0.1  # 10% de comisión
+                st.metric("Comisión (10%)", f"${comision:,.0f}")
+        
+        # Tabla de ventas
+        st.markdown("### 📊 Registro de Ventas")
+        if not df_filtered.empty:
+            st.dataframe(
+                df_filtered,
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No hay ventas registradas para este vendedor")
+        
+        # Botón para agregar venta manual
+        with st.expander("➕ Agregar Venta Manual"):
+            with st.form("venta_manual"):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    nombre_manual = st.text_input("Nombre del comprador")
+                    telefono_manual = st.text_input("Teléfono")
+                    vendedor_manual = st.text_input("Vendedor", value=vendedor_filter if vendedor_filter != "Todos" else "")
+                
+                with col2:
+                    numero_manual = st.selectbox("Número", available_numbers)
+                    monto_manual = st.number_input("Monto", value=10000)
+                    email_manual = st.text_input("Email (opcional)")
+                
+                if st.form_submit_button("Guardar Venta"):
+                    if nombre_manual and telefono_manual and vendedor_manual:
+                        sale_data = {
+                            "fecha": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "vendedor": vendedor_manual,
+                            "numero": numero_manual,
+                            "nombre_comprador": nombre_manual,
+                            "telefono": telefono_manual,
+                            "email": email_manual,
+                            "monto": monto_manual,
+                            "estado": "vendido",
+                            "observaciones": "Venta manual"
+                        }
+                        
+                        success = add_sale_to_sheet(gc, sheet_id, sale_data)
+                        if success:
+                            st.success("Venta agregada exitosamente")
+                            time.sleep(1)
+                            st.rerun()
+                    else:
+                        st.error("Completa todos los campos requeridos")
+    
+    elif page == "📊 Administración":
+        st.markdown("### 📊 Panel de Administración")
+        
+        # Métricas generales
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Vendidos", summary['total_vendidos'], f"{summary['total_vendidos']-90} vs objetivo")
+        with col2:
+            st.metric("Recaudación", f"${summary['monto_total']:,.0f}")
+        with col3:
+            efficiency = (summary['total_vendidos'] / 100) * 100
+            st.metric("Eficiencia", f"{efficiency:.1f}%")
+        with col4:
+            st.metric("Vendedores Activos", len(summary['ventas_por_vendedor']))
+        
+        # Datos completos
+        st.markdown("### 📋 Datos Completos")
+        if not df.empty:
+            # Filtros
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                date_filter = st.date_input("Filtrar por fecha")
+            with col2:
+                vendedor_admin_filter = st.selectbox("Filtrar por vendedor", ["Todos"] + list(df['vendedor'].unique()))
+            with col3:
+                estado_filter = st.selectbox("Filtrar por estado", ["Todos", "vendido", "reservado", "cancelado"])
+            
+            # Aplicar filtros
+            df_admin = df.copy()
+            if vendedor_admin_filter != "Todos":
+                df_admin = df_admin[df_admin['vendedor'] == vendedor_admin_filter]
+            if estado_filter != "Todos":
+                df_admin = df_admin[df_admin['estado'] == estado_filter]
+            
+            st.dataframe(df_admin, use_container_width=True, hide_index=True)
+            
+            # Botón de descarga
+            csv = df_admin.to_csv(index=False)
+            st.download_button(
+                label="📥 Descargar CSV",
+                data=csv,
+                file_name=f"reporte_rifa_{datetime.datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("No hay datos para mostrar")
+        
+        # Herramientas administrativas
+        with st.expander("🛠️ Herramientas Administrativas"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Sorteo**")
+                if st.button("🎲 Realizar Sorteo"):
+                    if sold_numbers:
+                        ganador = random.choice(sold_numbers)
+                        winner_data = df[df['numero'].astype(int) == ganador].iloc[0]
+                        st.success(f"🏆 ¡Número ganador: {ganador}!")
+                        st.info(f"Ganador: {winner_data['nombre_comprador']} - Tel: {winner_data['telefono']}")
+                    else:
+                        st.warning("No hay números vendidos para sortear")
+            
+            with col2:
+                st.markdown("**Resetear Datos**")
+                if st.button("🗑️ Limpiar Datos", type="secondary"):
+                    st.warning("Esta función eliminaría todos los datos. Implementar con cuidado.")
 
-def mostrar_ventas():
-    st.header("📋 Registro de Ventas")
-    
-    if not numeros_vendidos:
-        st.info("ℹ️ No hay ventas registradas aún.")
-        return
-    
-    # Convertir a DataFrame
-    data = []
-    for numero, info in numeros_vendidos.items():
-        data.append({
-            'Número': numero,
-            'Comprador': info['comprador'],
-            'Teléfono': info['telefono'],
-            'Vendedor': info['vendedor'],
-            'Fecha': info['fecha_venta']
-        })
-    
-    df = pd.DataFrame(data)
-    df = df.sort_values('Número')
-    
-    # Filtro por vendedor
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        filtro_vendedor = st.selectbox(
-            "Filtrar por vendedor:",
-            ["Todos"] + list(df['Vendedor'].unique())
-        )
-    
-    if filtro_vendedor != "Todos":
-        df_filtrado = df[df['Vendedor'] == filtro_vendedor]
-    else:
-        df_filtrado = df
-    
-    st.dataframe(df_filtrado, use_container_width=True)
-    
-    # Estadísticas por vendedor
-    st.subheader("📊 Ventas por Vendedor")
-    ventas_por_vendedor = df.groupby('Vendedor').size().sort_values(ascending=False)
-    st.bar_chart(ventas_por_vendedor)
-
-# Layout principal
-tab1, tab2, tab3 = st.tabs(["🔢 Números", "💰 Vender", "📋 Ventas"])
-
-with tab1:
-    mostrar_grilla_numeros()
-    
-    # Leyenda
-    st.markdown("---")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("🟢 **Verde:** Disponibles")
-    with col2:
-        st.markdown("🟡 **Amarillo:** Reservados")
-    with col3:
-        st.markdown("🔴 **Rojo:** Vendidos")
-
-with tab2:
-    proceso_venta()
-
-with tab3:
-    mostrar_ventas()
-
-# Footer
-st.markdown("---")
-st.markdown("*Sistema multi-vendedor sincronizado con Google Sheets*")
-st.caption(f"Última actualización: {st.session_state.ultima_actualizacion.strftime('%H:%M:%S')}")
+if __name__ == "__main__":
+    main()
