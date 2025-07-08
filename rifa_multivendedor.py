@@ -824,7 +824,18 @@ def main():
                 
             with col2:
                 st.markdown("**Detalles de la Compra**")
-                vendedor = st.selectbox("Vendedor *", ["Vendedor 1", "Vendedor 2", "Vendedor 3", "Otro"])
+                vendedor = st.selectbox("Vendedor *", ["Vendedor 1",
+                                                       "Vendedor 2", 
+                                                       "Vendedor 3",
+                                                       "Vendedor 4", 
+                                                       "Vendedor 5", 
+                                                       "Vendedor 6", 
+                                                       "Vendedor 7", 
+                                                       "Vendedor 8", 
+                                                       "Vendedor 9", 
+                                                       "Vendedor 10", 
+                                                       "Vendedor 11",
+                                                       "Otro"])
                 if vendedor == "Otro":
                     vendedor = st.text_input("Nombre del vendedor")
                 
