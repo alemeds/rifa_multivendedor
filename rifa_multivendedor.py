@@ -80,7 +80,7 @@ def add_sale_to_sheet(gc, sheet_id, sale_data, worksheet_name="ventas"):
         st.error(f"Error al guardar venta: {e}")
         return False
 
-def get_available_numbers(df, total_numbers=500):
+def get_available_numbers(df, total_numbers=1000):
     """Obtiene los números disponibles para la rifa"""
     if df.empty:
         return list(range(1, total_numbers + 1))
@@ -94,7 +94,7 @@ def get_sales_summary(df):
     if df.empty:
         return {
             'total_vendidos': 0,
-            'total_disponibles': 500,
+            'total_disponibles': 1000,
             'monto_total': 0,
             'ventas_por_vendedor': {}
         }
@@ -103,7 +103,7 @@ def get_sales_summary(df):
     
     summary = {
         'total_vendidos': len(sold_df),
-        'total_disponibles': 500 - len(sold_df),
+        'total_disponibles': 1000 - len(sold_df),
         'monto_total': sold_df['monto'].astype(float).sum() if not sold_df.empty else 0,
         'ventas_por_vendedor': sold_df.groupby('vendedor').size().to_dict() if not sold_df.empty else {}
     }
@@ -198,7 +198,7 @@ def load_css():
     </style>
     """, unsafe_allow_html=True)
 
-def display_number_grid(available_numbers, sold_numbers, total_numbers=500):
+def display_number_grid(available_numbers, sold_numbers, total_numbers=1000):
     """Muestra la grilla de números de la rifa"""
     st.markdown("### 🎯 Estado de los Números")
     
@@ -265,7 +265,7 @@ def show_user_manual():
         <div class="tip-box">
             <h4>🎟️ Especificaciones de la Rifa</h4>
             <ul>
-                <li><strong>Total de números:</strong> 500 (del 1 al 500)</li>
+                <li><strong>Total de números:</strong> 1000 (del 1 al 1000)</li>
                 <li><strong>Precio por número:</strong> $5,000</li>
                 <li><strong>Recaudación máxima:</strong> $2,500,000</li>
                 <li><strong>Comisión vendedores:</strong> 10%</li>
@@ -382,7 +382,7 @@ def show_user_manual():
             <li><span style="background:#ff6b6b; color:white; padding:2px 8px; border-radius:3px;">Números Rojos</span>: Ya están vendidos</li>
             <li><span style="background:#51cf66; color:white; padding:2px 8px; border-radius:3px;">Números Verdes</span>: Disponibles para compra</li>
         </ul>
-        <p>La grilla muestra los 500 números organizados en filas de 10 números cada una.</p>
+        <p>La grilla muestra los 1000 números organizados en filas de 10 números cada una.</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -781,7 +781,7 @@ def main():
             st.metric("💰 Recaudación Total", f"${summary['monto_total']:,.0f}")
         
         with col4:
-            progress = summary['total_vendidos'] / 500 * 100
+            progress = summary['total_vendidos'] / 1000 * 100
             st.metric("📈 Progreso", f"{progress:.1f}%")
         
         # Mostrar grilla de números
@@ -793,7 +793,7 @@ def main():
         
         with col1:
             st.markdown("### 📋 Información de la Rifa")
-            st.write("- **Total de números:** 500")
+            st.write("- **Total de números:** 1000")
             st.write("- **Precio por número:** $5,000")
             st.write("- **Premio:** Por definir")
             st.write("- **Fecha de sorteo:** Por definir")
@@ -840,7 +840,7 @@ def main():
                     vendedor = st.text_input("Nombre del vendedor")
                 
                 numero_seleccionado = st.selectbox("Número a comprar *", available_numbers)
-                monto = st.number_input("Monto ($)", value=5000, min_value=1000)
+                monto = st.number_input("Monto ($)", value=2500, min_value=1000)
                 observaciones = st.text_area("Observaciones", placeholder="Información adicional...")
             
             submitted = st.form_submit_button("💳 Confirmar Compra", use_container_width=True)
@@ -922,7 +922,7 @@ def main():
                 
                 with col2:
                     numero_manual = st.selectbox("Número", available_numbers)
-                    monto_manual = st.number_input("Monto", value=5000)
+                    monto_manual = st.number_input("Monto", value=2500)
                     email_manual = st.text_input("Email (opcional)")
                 
                 if st.form_submit_button("Guardar Venta"):
@@ -958,7 +958,7 @@ def main():
         with col2:
             st.metric("Recaudación", f"${summary['monto_total']:,.0f}")
         with col3:
-            efficiency = (summary['total_vendidos'] / 500) * 100
+            efficiency = (summary['total_vendidos'] / 1000) * 100
             st.metric("Eficiencia", f"{efficiency:.1f}%")
         with col4:
             st.metric("Vendedores Activos", len(summary['ventas_por_vendedor']))
