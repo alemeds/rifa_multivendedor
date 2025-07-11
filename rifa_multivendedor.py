@@ -824,17 +824,17 @@ def main():
                 
             with col2:
                 st.markdown("**Detalles de la Compra**")
-                vendedor = st.selectbox("Vendedor *", ["Vendedor 1",
-                                                       "Vendedor 2", 
-                                                       "Vendedor 3",
-                                                       "Vendedor 4", 
-                                                       "Vendedor 5", 
-                                                       "Vendedor 6", 
-                                                       "Vendedor 7", 
-                                                       "Vendedor 8", 
-                                                       "Vendedor 9", 
-                                                       "Vendedor 10", 
-                                                       "Vendedor 11",
+                vendedor = st.selectbox("Vendedor *", ["ENRIQUE CARDENAS",
+                                                       "MARCELA RAGGI", 
+                                                       "STELLA",
+                                                       "ANTONIO MARTINEZ", 
+                                                       "ROSA CLOSS", 
+                                                       "MARIANA PRADO", 
+                                                       "CARO CROSTA", 
+                                                       "SANDRA DASSO", 
+                                                       "SERGIO", 
+                                                       "FERNANDO", 
+                                                       "MARTIN",
                                                        "Otro"])
                 if vendedor == "Otro":
                     vendedor = st.text_input("Nombre del vendedor")
@@ -878,7 +878,7 @@ def main():
         st.markdown("### 👥 Panel del Vendedor")
         
         vendedor_filter = st.selectbox("Seleccionar Vendedor", 
-                                     ["Todos"] + list(summary['ventas_por_vendedor'].keys()) + ["Vendedor 1", "Vendedor 2", "Vendedor 3"])
+                                     ["Todos"] + list(summary['ventas_por_vendedor'].keys()) + ["ENRIQUE CARDENAS", "MARCELA RAGGI", "STELLA"])
         
         if vendedor_filter != "Todos" and not df.empty:
             df_filtered = df[df['vendedor'] == vendedor_filter]
