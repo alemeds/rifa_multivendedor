@@ -15,8 +15,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CLAVE DEL VENDEDOR (configurable en secrets)
+# CLAVES (configurables en secrets)
 VENDEDOR_PASSWORD = st.secrets.get("VENDEDOR_PASSWORD", "vendedor123")
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "admin123")
 
 # Configuración de autenticación con Google Sheets
 @st.cache_resource
@@ -263,7 +264,7 @@ def main():
             st.write("- **Premio:** Por definir")
             st.write("- **Fecha de sorteo:** Por definir")
             st.write("")
-            st.info("💡 **Instrucción:** Reserva tu número y luego confirmá tu pago")
+            st.info("💡 **Instrucción:** Reserva tu número y el vendedor confirmará tu pago")
         
         with col2:
             st.markdown("### 💰 Recaudación")
@@ -296,7 +297,7 @@ def main():
             with col2:
                 st.markdown("**Selección de Número**")
                 numero_seleccionado = st.selectbox("Número a reservar *", sorted(numbers_status['disponibles']))
-                monto = st.number_input("Monto a pagar ($)", value=5000, min_value=5000, disabled=True)
+                monto = st.number_input("Monto a pagar ($)", value=5000, min_value=1000, disabled=True)
                 observaciones = st.text_area("Observaciones", placeholder="Información adicional...")
             
             submitted = st.form_submit_button("🟡 Reservar Número", use_container_width=True, type="primary")
@@ -427,7 +428,7 @@ def main():
                 
                 with col2:
                     email_comprador = st.text_input("Email (opcional)")
-                    monto_venta = st.number_input("Monto ($)", value=10000, min_value=1000)
+                    monto_venta = st.number_input("Monto ($)", value=5000, min_value=1000)
                     obs_venta = st.text_area("Observaciones")
                 
                 if st.form_submit_button("🔴 Confirmar como VENDIDO", type="primary"):
@@ -493,6 +494,47 @@ def main():
     
     elif page == "📊 Administración":
         st.markdown("### 📊 Panel de Administración")
+        
+        # Sistema de autenticación para administración
+        if 'admin_logged' not in st.session_state:
+            st.session_state.admin_logged = False
+        
+        if not st.session_state.admin_logged:
+            st.warning("🔒 Acceso restringido. Ingresa la clave de administrador.")
+            
+            with st.form("admin_login_form"):
+                admin_password = st.text_input("Clave de Administrador", type="password")
+                admin_name = st.text_input("Tu Nombre", placeholder="Ej: Juan Admin")
+                submit_admin = st.form_submit_button("🔓 Ingresar como Admin")
+                
+                if submit_admin:
+                    if admin_password == ADMIN_PASSWORD:
+                        if admin_name:
+                            st.session_state.admin_logged = True
+                            st.session_state.admin_name = admin_name
+                            st.success("✅ Acceso de administrador concedido")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("Por favor ingresa tu nombre")
+                    else:
+                        st.error("❌ Clave de administrador incorrecta")
+            
+            st.info("💡 La clave por defecto es: `admin123` (configurable en secrets.toml)")
+            return
+        
+        # Panel de administración (solo visible si está logueado)
+        admin_name = st.session_state.admin_name
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.success(f"👤 Admin: **{admin_name}**")
+        with col2:
+            if st.button("🚪 Cerrar Sesión"):
+                st.session_state.admin_logged = False
+                st.rerun()
+        
+        st.markdown("---")
         
         # Métricas generales
         col1, col2, col3, col4 = st.columns(4)
