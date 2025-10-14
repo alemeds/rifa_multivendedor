@@ -259,11 +259,11 @@ def main():
         with col1:
             st.markdown("### 📋 Información de la Rifa")
             st.write("- **Total de números:** 100")
-            st.write("- **Precio por número:** $10,000")
+            st.write("- **Precio por número:** $5,000")
             st.write("- **Premio:** Por definir")
             st.write("- **Fecha de sorteo:** Por definir")
             st.write("")
-            st.info("💡 **Instrucción:** Reserva tu número y el vendedor confirmará tu pago")
+            st.info("💡 **Instrucción:** Reserva tu número y confirmá tu pago")
         
         with col2:
             st.markdown("### 💰 Recaudación")
@@ -296,7 +296,7 @@ def main():
             with col2:
                 st.markdown("**Selección de Número**")
                 numero_seleccionado = st.selectbox("Número a reservar *", sorted(numbers_status['disponibles']))
-                monto = st.number_input("Monto a pagar ($)", value=10000, min_value=1000, disabled=True)
+                monto = st.number_input("Monto a pagar ($)", value=5000, min_value=5000, disabled=True)
                 observaciones = st.text_area("Observaciones", placeholder="Información adicional...")
             
             submitted = st.form_submit_button("🟡 Reservar Número", use_container_width=True, type="primary")
@@ -427,7 +427,7 @@ def main():
                 
                 with col2:
                     email_comprador = st.text_input("Email (opcional)")
-                    monto_venta = st.number_input("Monto ($)", value=10000, min_value=1000)
+                    monto_venta = st.number_input("Monto ($)", value=5000, min_value=5000)
                     obs_venta = st.text_area("Observaciones")
                 
                 if st.form_submit_button("🔴 Confirmar como VENDIDO", type="primary"):
