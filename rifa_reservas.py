@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 # CLAVE DEL VENDEDOR (configurable en secrets)
-VENDEDOR_PASSWORD = st.secrets.get("VENDEDOR_PASSWORD", "vendedor123")
+VENDEDOR_PASSWORD = st.secrets.get( "vendedor123")
 
 # Configuración de autenticación con Google Sheets
 @st.cache_resource
