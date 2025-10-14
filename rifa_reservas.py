@@ -345,7 +345,13 @@ def main():
                 submit = st.form_submit_button("🔓 Ingresar")
                 
                 if submit:
-                    if password == st.secrets.get("VENDEDOR_PASSWORD", "vendedor123"):
+                    # Obtener clave del vendedor de secrets
+                    try:
+                        vendedor_password = st.secrets["VENDEDOR_PASSWORD"]
+                    except:
+                        vendedor_password = "vendedor123"
+                    
+                    if password == vendedor_password:
                         if vendedor_name:
                             st.session_state.vendedor_logged = True
                             st.session_state.vendedor_name = vendedor_name
@@ -357,7 +363,7 @@ def main():
                     else:
                         st.error("❌ Clave incorrecta")
             
-            st.info("💡 La clave por defecto es: `vendedor123` (configurable en secrets.toml)")
+            st.info("💡 Claves por defecto: Vendedor=`vendedor123` / Admin=`admin123` (configurables en secrets.toml)")
             return
         
         # Panel del vendedor autenticado
@@ -506,7 +512,13 @@ def main():
                 submit_admin = st.form_submit_button("🔓 Ingresar como Admin")
                 
                 if submit_admin:
-                    if admin_password == st.secrets.get("ADMIN_PASSWORD", "admin123"):
+                    # Obtener clave de admin de secrets
+                    try:
+                        admin_password_correct = st.secrets["ADMIN_PASSWORD"]
+                    except:
+                        admin_password_correct = "admin123"
+                    
+                    if admin_password == admin_password_correct:
                         if admin_name:
                             st.session_state.admin_logged = True
                             st.session_state.admin_name = admin_name
