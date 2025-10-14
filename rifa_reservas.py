@@ -15,9 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CLAVES (configurables en secrets)
-VENDEDOR_PASSWORD = st.secrets.get("VENDEDOR_PASSWORD", "vendedor123")
-ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "admin123")
+# Las claves se leerán directamente desde st.secrets cuando se necesiten
 
 # Configuración de autenticación con Google Sheets
 @st.cache_resource
@@ -347,7 +345,7 @@ def main():
                 submit = st.form_submit_button("🔓 Ingresar")
                 
                 if submit:
-                    if password == VENDEDOR_PASSWORD:
+                    if password == st.secrets.get("VENDEDOR_PASSWORD", "vendedor123"):
                         if vendedor_name:
                             st.session_state.vendedor_logged = True
                             st.session_state.vendedor_name = vendedor_name
@@ -508,7 +506,7 @@ def main():
                 submit_admin = st.form_submit_button("🔓 Ingresar como Admin")
                 
                 if submit_admin:
-                    if admin_password == ADMIN_PASSWORD:
+                    if admin_password == st.secrets.get("ADMIN_PASSWORD", "admin123"):
                         if admin_name:
                             st.session_state.admin_logged = True
                             st.session_state.admin_name = admin_name
