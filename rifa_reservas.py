@@ -606,7 +606,16 @@ def main():
             
             with col2:
                 st.markdown("**Info Sistema**")
-                st.write(f"Clave vendedor: `{VENDEDOR_PASSWORD}`")
+                try:
+                    vendedor_pwd = st.secrets["VENDEDOR_PASSWORD"]
+                except:
+                    vendedor_pwd = "vendedor123"
+                try:
+                    admin_pwd = st.secrets["ADMIN_PASSWORD"]
+                except:
+                    admin_pwd = "admin123"
+                st.write(f"Clave vendedor: `{vendedor_pwd}`")
+                st.write(f"Clave admin: `{admin_pwd}`")
                 st.caption("(Configurable en secrets.toml)")
 
 if __name__ == "__main__":
